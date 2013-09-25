@@ -22,279 +22,105 @@ pip install Reding
 
 Some examples:
 --------------
-Let's start, my Reding is empty, no book has been voted:
+```python
+# Let's start, my Reding is empty, no book has been voted. Note: `bookshelf` is my `namespace`.
+response = self.app.get('/bookshelf/obj/')
+self.assertResponse(response, [])
+# I wanna give a '10' to the amazing 'Core Python Applications Programming' book (ISBN-13: 978-0132678209)
+response = self.app.post('/bookshelf/obj/978-0132678209/user/gsalluzzo/', data={'vote': 10, 'timestamp': 1379402591})
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'gsalluzzo',
+    'when': 'Tue, 17 Sep 2013 09:23:11 -0000',
+    'object_id': '978-0132678209',
+    'context': {},
+    'vote': 10
+})
+# OK, '10' is too much indeed, let's change it to '9' and add a review, or the author will get crazy about that
+response = self.app.post('/bookshelf/obj/978-0132678209/user/gsalluzzo/', data={'vote': 9, 'timestamp': 1379402592, 'text': 'the ☃ loves python'})
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'gsalluzzo',
+    'when': 'Tue, 17 Sep 2013 09:23:12 -0000',
+    'object_id': '978-0132678209',
+    'context': {'text': 'the ☃ loves python'},
+    'vote': 9
+})
+# Let's see if somebody voted something (my memory is like the gold fish one)
+response = self.app.get('/bookshelf/obj/')
+self.assertResponse(response, [{
+    'updated': 'Tue, 17 Sep 2013 09:23:12 -0000',
+    'object_id': '978-0132678209',
+    'counters': [[9, 1]]
+}])
+# Not expected... ;) Let's enter another vote:
+response = self.app.post('/bookshelf/obj/978-0132678209/user/wchun/', data={'vote': 10, 'timestamp': 1379402593})
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'wchun',
+    'when': 'Tue, 17 Sep 2013 09:23:13 -0000',
+    'object_id': '978-0132678209',
+    'context': {},
+    'vote': 10
+})
+# The author said '10'! What a surprise! Let's get the voted books again
+response = self.app.get('/bookshelf/obj/')
+self.assertResponse(response, [{
+    'updated': 'Tue, 17 Sep 2013 09:23:13 -0000',
+    'object_id': '978-0132678209',
+    'counters': [[10, 1], [9, 1]]
+}])
+#There's only a book, what if I only get that one??
+response = self.app.get('/bookshelf/obj/978-0132678209/')
+self.assertResponse(response, {
+    'updated': 'Tue, 17 Sep 2013 09:23:13 -0000',
+    'object_id': '978-0132678209',
+    'counters': [[10, 1], [9, 1]]
+})
+#Or what if I only get my single vote?
+response = self.app.get('/bookshelf/obj/978-0132678209/user/gsalluzzo/')
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'gsalluzzo',
+    'when': 'Tue, 17 Sep 2013 09:23:12 -0000',
+    'object_id': '978-0132678209',
+    'context': {'text': 'the ☃ loves python'},
+    'vote': 9
+})
+# Let's remove the author's one, he cheated:
+response = self.app.delete('/bookshelf/obj/978-0132678209/user/wchun/')
+self.assertResponse(response, '', status=204)
+# Let's enter my mom's vote, she does not like Python, she even doesn't know what it is...
+response = self.app.post('/bookshelf/obj/978-0132678209/user/mymom/', data={'vote': 3, 'timestamp': 1379402594})
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'mymom',
+    'when': 'Tue, 17 Sep 2013 09:23:14 -0000',
+    'object_id': '978-0132678209',
+    'context': {},
+    'vote': 3
+})
+# Of course, I don't agree with her: :thumbsdown:
+response = self.app.post('/bookshelf:978-0132678209/obj/mymom/user/gsalluzzo/', data={'vote': -1, 'timestamp': 1379402595})
+self.assertResponse(response, {
+    'opinions': [],
+    'user_id': 'gsalluzzo',
+    'when': 'Tue, 17 Sep 2013 09:23:15 -0000',
+    'object_id': 'mymom',
+    'context': {},
+    'vote': -1
+})
+# Now I marked her review with a :thumbsdown:
+response = self.app.get('/bookshelf/obj/978-0132678209/user/mymom/')
+self.assertResponse(response, {
+    'opinions': [[-1, 1]],
+    'user_id': 'mymom',
+    'when': 'Tue, 17 Sep 2013 09:23:14 -0000',
+    'object_id': '978-0132678209',
+    'context': {},
+    'vote': 3
+})
 ```
-$ curl -i http://localhost:5000/objects/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 2
-Date: Fri, 01 Feb 2013 16:50:47 GMT
-Server: mindflayer
-```
-```json
-[]
-```
-
-I wanna give a '10' to the amazing 'Core Python Applications Programming' book (ISBN-13: 978-0132678209):
-```
-$ curl -i -XPUT http://localhost:5000/objects/978-0132678209/users/gsalluzzo/ -d "vote=10"
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 110
-Date: Fri, 01 Feb 2013 16:57:44 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 10,
-    "when": "Fri, 01 Feb 2013 17:57:44 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0132678209",
-    "review": null
-}
-```
-Ehy hackers, I've just used a PUT call, but yes, I know, it's the first vote, I should use a POST one. Reding maps POST method on the PUT one, so the client does not need to know if it's the first time I'm voting this object.
-
-OK, '10' is too much indeed, let's change it to '9', or the author will get crazy about that:
-```
-$ curl -i -XPUT http://localhost:5000/objects/978-0132678209/users/gsalluzzo/ -d "vote=9"
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 109
-Date: Fri, 01 Feb 2013 17:03:16 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 9,
-    "when": "Fri, 01 Feb 2013 18:03:16 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0132678209",
-    "review": null
-}
-```
-
-Let's see if somebody voted something (my memory is like the gold fish one):
-```
-$ curl -i http://localhost:5000/objects/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 79
-Date: Fri, 01 Feb 2013 17:05:46 GMT
-Server: mindflayer
-```
-```json
-[{
-    "amount": 9,
-    "average": "9.0",
-    "object_id": "978-0132678209",
-    "votes_no": 1
-}]
-```
-
-Not expected... ;) Let's enter another vote:
-```
-$ curl -i -XPUT http://localhost:5000/objects/978-0132678209/users/wchun/ -d "vote=10"
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 106
-Date: Fri, 01 Feb 2013 17:08:03 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 10,
-    "when": "Fri, 01 Feb 2013 18:08:03 -0000",
-    "user_id": "wchun",
-    "object_id": "978-0132678209",
-    "review": null
-}
-```
-The author said '10'! What a surprise! :D
-
-Let's get the voted books again:
-```
-$ curl -i http://localhost:5000/objects/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 80
-Date: Fri, 01 Feb 2013 17:09:42 GMT
-Server: mindflayer
-```
-```json
-[{
-    "amount": 19,
-    "average": "9.5",
-    "object_id": "978-0132678209",
-    "votes_no": 2
-}]
-```
-
-There's only a book, what if I only get that one??
-```
-$ curl -i http://localhost:5000/objects/978-0132678209/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 78
-Date: Fri, 01 Feb 2013 17:11:13 GMT
-Server: mindflayer
-```
-```json
-{
-    "amount": 19,
-    "average": "9.5",
-    "object_id": "978-0132678209",
-    "votes_no": 2
-}
-```
-
-Or what if I only get my single vote?
-```
-$ curl -i http://localhost:5000/objects/978-0132678209/users/gsalluzzo/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 109
-Date: Fri, 01 Feb 2013 17:12:00 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 9,
-    "when": "Fri, 01 Feb 2013 18:03:16 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0132678209",
-    "review": null
-}
-```
-
-Let's remove the author's one, he cheated:
-```
-$ curl -i -XDELETE http://localhost:5000/objects/978-0132678209/users/wchun/
-HTTP/1.1 204 NO CONTENT
-Content-Type: application/json
-Content-Length: 0
-Date: Fri, 01 Feb 2013 17:13:45 GMT
-Server: mindflayer
-```
-
-Let's enter my mom's vote, she does not like Python, she even doesn't know what it is...
-```
-$ curl -i -XPUT http://localhost:5000/objects/978-0132678209/users/mymom/ -d "vote=3"
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 105
-Date: Fri, 01 Feb 2013 17:15:38 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 3,
-    "when": "Fri, 01 Feb 2013 18:15:38 -0000",
-    "user_id": "mymom",
-    "object_id": "978-0132678209",
-    "review": null
-}
-```
-
-Let's see the average, it must be decreased:
-```
-$ curl -i http://localhost:5000/objects/978-0132678209/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 78
-Date: Fri, 01 Feb 2013 17:17:09 GMT
-Server: mindflayer
-```
-```json
-{
-    "amount": 12,
-    "average": "6.0",
-    "object_id": "978-0132678209",
-    "votes_no": 2
-}
-```
-
-Well, stop programming books...I'm gonna give a '10' to the amazing 'The Lord of the Rings Sketchbook',
-but this time let me add a review:
-```
-$ curl -i -XPUT http://localhost:5000/objects/978-0618640140/users/gsalluzzo/ -d "vote=10&review=the ☃ loves lotr"
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 110
-Date: Fri, 01 Feb 2013 17:21:56 GMT
-Server: mindflayer
-```
-```json
-{
-    "vote": 10,
-    "when": "Fri, 01 Feb 2013 18:21:56 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0618640140",
-    "review": "the ☃ loves lotr"
-}
-}
-```
-
-Let's see the books I voted and what I wrote about them:
-```
-$ curl -i http://localhost:5000/users/gsalluzzo/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 223
-Date: Fri, 01 Feb 2013 17:22:55 GMT
-Server: mindflayer
-```
-```json
-[{
-    "vote": 9,
-    "when": "Fri, 01 Feb 2013 18:03:16 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0132678209",
-    "review": null
-}, {
-    "vote": 10,
-    "when": "Fri, 01 Feb 2013 18:21:56 -0000",
-    "user_id": "gsalluzzo",
-    "object_id": "978-0618640140",
-    "review": "the ☃ loves lotr"
-}]
-```
-
-...and again all books voted:
-```
-$ curl -i http://localhost:5000/objects/
-HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 161
-Date: Fri, 01 Feb 2013 17:23:51 GMT
-Server: mindflayer
-```
-```json
-[{
-    "amount": 10,
-    "average": "10.0",
-    "object_id": "978-0618640140",
-    "votes_no": 1
-}, {
-    "amount": 12,
-    "average": "6.0",
-    "object_id": "978-0132678209",
-    "votes_no": 2
-}]
-```
-
-
-Filters (on GET's views):
---------
-* *vote=* available on "/objects/<<string:object_id>>/" and "/objects/<<string:object_id>>/users/" interfaces.
-
-
-What's missing:
-----------------
-* List pagination; DONE!
-* List sorting; DONE!
-* Any suggestion?
-
 
 Thanks to:
 ----------

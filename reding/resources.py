@@ -1,39 +1,10 @@
-from reding.managers import ObjectSubjectsManager, SubjectObjectsManager, ObjectsManager
-from reding.settings import KEY_CONFIG
+from flask import request
+from flask.ext.restful import reqparse, marshal_with, abort
+from flask.ext import restful
+from reding.errors import DoesNotExists
+from reding.models import RatingModel, ObjModel, ObjManager
 from reding.settings import PAGINATION_DEFAULT_OFFSET as OFFSET
 from reding.settings import PAGINATION_DEFAULT_SIZE as SIZE
-
-from flask.ext.restful import reqparse, fields, marshal_with, abort
-from flask.ext import restful
-
-from time import time
-from six import text_type
-
-
-def get_user_object_reply(object_id, user_id, vote, when, review):
-    return {
-        'object_id': object_id,
-        'user_id': user_id,
-        'vote': vote,
-        'when': when,
-        'review': review
-    }
-
-
-object_resource_fields = {
-    'votes_no': fields.Integer,
-    'amount': fields.Integer,
-    'average': fields.Float,
-    'object_id': fields.String,
-}
-
-user_object_resource_fields = {
-    'vote': fields.Integer,
-    'review': fields.Raw,
-    'object_id': fields.String,
-    'user_id': fields.String,
-    'when': fields.DateTime
-}
 
 
 class RedingResource(restful.Resource):
@@ -45,243 +16,97 @@ class RedingResource(restful.Resource):
         self.configure()
 
     def configure(self):
-        for key in KEY_CONFIG:
-            self.parser.add_argument(key, type=str)
+        pass
 
 
-class VotedListResource(RedingResource):
-    def configure(self):
-        super(VotedListResource, self).configure()
-        self.parser.add_argument('object_id', type=str, action='append')
-        self.parser.add_argument('sort', type=str, default='+')
-        self.parser.add_argument('offset', type=int, default=OFFSET)
-        self.parser.add_argument('size', type=int, default=SIZE)
-
-    @marshal_with(object_resource_fields)
-    def get(self):
-        args = self.parser.parse_args()
-
-        amounts = ObjectsManager(**args).scoredrange(
-            offset=args['offset'],
-            size=args['size'],
-            reverse=args['sort'] == '-',
-        )
-
-        reply = []
-        osmanager = ObjectSubjectsManager(**args)
-        for object_id, amount in amounts:
-            votes_no = osmanager.count(object_id=object_id)
-            if votes_no:  # skipping objects with no votes
-                reply.append(
-                    dict(
-                        votes_no=votes_no,
-                        average=amount / votes_no,
-                        amount=amount,
-                        object_id=object_id,
-                    )
-                )
-        return reply
-
-    def post(self):
-        """
-        It sorts a list of 'object_id' with their amount of votes and returns it,
-        objects not rated are at the end of the list
-        :return: list
-        """
-        args = self.parser.parse_args()
-
-        return ObjectsManager(**args).filtered(
-            objects=args['object_id'],
-            now=int(time()),
-            reverse=args['sort'] == '-',
-        )
-
-
-class VotedSummaryResource(RedingResource):
-    def configure(self):
-        super(VotedSummaryResource, self).configure()
-        self.parser.add_argument('vote', type=int, default=0)
-
-    @marshal_with(object_resource_fields)
-    def get(self, object_id):
-        args = self.parser.parse_args()
-
-        vote = args['vote']
-
-        amount = ObjectsManager(**args).score(object_id=object_id) or 0
-
-        votes_no = ObjectSubjectsManager(**args).count(
-            object_id=object_id,
-            min_vote=vote or '-inf',
-            max_vote=vote or '+inf',
-        )
-
-        if not votes_no:
-            average = 0
-            amount = 0
-        elif vote:
-            average = vote
-            amount = vote * votes_no
+class RedingListResource(RedingResource):
+    @staticmethod
+    def parse_sort(value):
+        c = value[0]
+        if c in ('+', '-'):
+            value = value[1:]
         else:
-            average = amount / votes_no
-
-        return (
-            dict(
-                votes_no=votes_no,
-                average=average,
-                amount=amount,
-                object_id=object_id,
-            )
-        )
+            c = '+'
+        return c == '+', value
 
 
-class VotingUserListResource(RedingResource):
-    def configure(self):
-        super(VotingUserListResource, self).configure()
-        self.parser.add_argument('sort', type=str, default='+')
-        self.parser.add_argument('offset', type=int, default=OFFSET)
-        self.parser.add_argument('size', type=int, default=SIZE)
-        self.parser.add_argument('vote', type=int, default=0)
+class RatingDetailResource(RedingResource):
+    @marshal_with(RatingModel.fields)
+    def get(self, namespace, obj_id, user_id):
+        try:
+            return RatingModel(namespace=namespace, user_id=user_id, obj_id=obj_id).get()
+        except DoesNotExists:
+            abort(404)
 
-    @marshal_with(user_object_resource_fields)
-    def get(self, object_id):
-        args = self.parser.parse_args()
-
-        osmanager = ObjectSubjectsManager(**args)
-        somanager = SubjectObjectsManager(**args)
-
-        votes = osmanager.scoredrange(
-            object_id=object_id,
-            offset=args['offset'],
-            size=args['size'],
-            min_vote=args['vote'] or '-inf',
-            max_vote=args['vote'] or '+inf',
-            reverse=args['sort'] == '-',
-        )
-
-        if not votes:
-            return []
-
-        reviews = osmanager.reviews(object_id, *[user_id for user_id, _ in votes])
-
-        reply = [
-            get_user_object_reply(
-                object_id=object_id,
-                user_id=user_id,
-                vote=vote,
-                when=somanager.score(user_id=user_id, object_id=object_id),
-                review=reviews[user_id],
-            ) for user_id, vote in votes
-        ]
-        return reply
-
-
-class UserSummaryResource(RedingResource):
-    def configure(self):
-        super(UserSummaryResource, self).configure()
-        self.parser.add_argument('sort', type=str, default='+')
-        self.parser.add_argument('offset', type=int, default=OFFSET)
-        self.parser.add_argument('size', type=int, default=SIZE)
-
-    @marshal_with(user_object_resource_fields)
-    def get(self, user_id):
-        args = self.parser.parse_args()
-
-        osmanager = ObjectSubjectsManager(**args)
-        somanager = SubjectObjectsManager(**args)
-
-        votetimes = somanager.scoredrange(
-            user_id=user_id,
-            offset=args['offset'],
-            size=args['size'],
-            reverse=args['sort'] == '-',
-        )
-        reply = [
-            get_user_object_reply(
-                object_id=object_id,
-                user_id=user_id,
-                vote=osmanager.score(object_id=object_id, user_id=user_id),
-                review=osmanager.review(object_id=object_id, user_id=user_id),
-                when=when,
-            ) for object_id, when in votetimes
-        ]
-
-        return reply
-
-
-class VoteSummaryResource(RedingResource):
-    @marshal_with(user_object_resource_fields)
-    def get(self, object_id, user_id):
-        args = self.parser.parse_args()
-
-        osmanager = ObjectSubjectsManager(**args)
-        somanager = SubjectObjectsManager(**args)
-
-        vote = osmanager.score(object_id=object_id, user_id=user_id)
-        when = somanager.score(user_id=user_id, object_id=object_id)
-
-        if not (vote and when):
-            message = "No vote on {object_id} by {user_id}.".format(
-                object_id=object_id,
-                user_id=user_id
-            )
-            abort(404, message=message)
-
-        return get_user_object_reply(
-            object_id=object_id,
-            user_id=user_id,
-            vote=vote,
-            when=when,
-            review=osmanager.review(object_id=object_id, user_id=user_id),
-        )
-
-    def post(self, object_id, user_id):
-        return self.put(object_id, user_id)
-
-    @marshal_with(user_object_resource_fields)
-    def put(self, object_id, user_id):
+    @marshal_with(RatingModel.fields)
+    def post(self, namespace, obj_id, user_id):
         self.parser.add_argument('vote', type=int, required=True)
-        self.parser.add_argument('review', type=text_type)
         args = self.parser.parse_args()
+        model = RatingModel(namespace=namespace, user_id=user_id, obj_id=obj_id)
+        model.set(**dict([(k, args.get(k, v)) for k, v in request.form.items()]))
+        return model.get()
 
-        osmanager = ObjectSubjectsManager(**args)
-        somanager = SubjectObjectsManager(**args)
-
-        self._perform_correction(object_id, user_id, args['vote'], args)
-        osmanager.create(object_id=object_id, user_id=user_id, vote=args['vote'], review=args['review'])
-        somanager.create(user_id=user_id, object_id=object_id, timestamp=time())
-
-        return get_user_object_reply(
-            object_id=object_id,
-            user_id=user_id,
-            vote=osmanager.score(object_id=object_id, user_id=user_id),
-            when=somanager.score(user_id=user_id, object_id=object_id),
-            review=osmanager.review(object_id=object_id, user_id=user_id),
-        )
-
-    def delete(self, object_id, user_id):
-        args = self.parser.parse_args()
-
-        self._perform_correction(object_id, user_id, 0, args)
-        SubjectObjectsManager(**args).remove(user_id=user_id, object_id=object_id)
-        ObjectSubjectsManager(**args).remove(object_id=object_id, user_id=user_id)
-
+    def delete(self, namespace, obj_id, user_id):
+        RatingModel(namespace=namespace, user_id=user_id, obj_id=obj_id).delete()
         return '', 204
 
-    def _perform_correction(self, object_id, user_id, next_vote, args):
-        prev_vote = ObjectSubjectsManager(**args).score(object_id=object_id, user_id=user_id) or 0
-        correction = next_vote - prev_vote
-        omanager = ObjectsManager(**args)
-        omanager.incrby(object_id=object_id, delta=correction)
-        amount = omanager.score(object_id=object_id)
 
-        if amount == 0:
-            omanager.remove(object_id=object_id)
+class RatingListResource(RedingListResource):
+    def configure(self):
+        super(RatingListResource, self).configure()
+        self.parser.add_argument('sort', type=str, default='+when')
+        self.parser.add_argument('offset', type=int, default=OFFSET)
+        self.parser.add_argument('size', type=int, default=SIZE)
+        self.parser.add_argument('vote_min', type=int)
+        self.parser.add_argument('vote_max', type=int)
+        self.parser.add_argument('when_min', type=int)
+        self.parser.add_argument('when_max', type=int)
 
-__all__ = (
-    'VotedSummaryResource',
-    'VotedListResource',
-    'VotingUserListResource',
-    'VoteSummaryResource',
-    'UserSummaryResource',
-)
+    @marshal_with(RatingModel.fields)
+    def get(self, namespace, obj_id):
+        args = self.parser.parse_args()
+        sort_desc, sort_key = self.parse_sort(args['sort'])
+        return ObjModel(namespace=namespace, obj_id=obj_id).details(
+            offset=args['offset'],
+            size=args['size'],
+            vote_min=args['vote_min'],
+            vote_max=args['vote_max'],
+            when_min=args['when_min'],
+            when_max=args['when_max'],
+            sort_desc=sort_desc,
+            sort_key=sort_key,
+        )
+
+
+class ObjDetailResource(RedingResource):
+    @marshal_with(ObjModel.fields)
+    def get(self, namespace, obj_id):
+        try:
+            return ObjModel(namespace=namespace, obj_id=obj_id).get()
+        except DoesNotExists:
+            abort(404)
+
+
+class ObjListResource(RedingListResource):
+    def configure(self):
+        super(ObjListResource, self).configure()
+        self.parser.add_argument('object_id', type=str, action='append')
+        self.parser.add_argument('sort', type=str, default='+amount')
+        self.parser.add_argument('offset', type=int, default=OFFSET)
+        self.parser.add_argument('size', type=int, default=SIZE)
+        self.parser.add_argument('updated_min', type=int)
+        self.parser.add_argument('updated_max', type=int)
+
+    @marshal_with(ObjModel.fields)
+    def get(self, namespace):
+        args = self.parser.parse_args()
+        sort_desc, sort_key = self.parse_sort(args['sort'])
+        return ObjManager(namespace=namespace).list(
+            objects_id=args['object_id'],
+            offset=args['offset'],
+            size=args['size'],
+            updated_min=args['updated_min'],
+            updated_max=args['updated_max'],
+            sort_key=sort_key,
+            sort_desc=sort_desc,
+        )

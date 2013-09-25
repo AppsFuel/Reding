@@ -1,42 +1,48 @@
-from setuptools import setup, find_packages
-import sys
-import os
+from setuptools import setup, find_packages, os
 
-wd = os.path.dirname(os.path.abspath(__file__))
-os.chdir(wd)
-sys.path.insert(1, wd)
+# Hack to prevent stupid "TypeError: 'NoneType' object is not callable" error
+# in multiprocessing/util.py _exit_function when running `python
+# setup.py test` (see
+# http://www.eby-sarna.com/pipermail/peak/2010-May/003357.html)
+for m in ('multiprocessing', 'billiard'):
+    try:
+        __import__(m)
+    except ImportError:
+        pass
 
-name = 'Reding'
-pkg = __import__('reding')
-
-author, email = pkg.__author__.rsplit(' ', 1)
-email = email.strip('<>')
-
-version = pkg.__version__
-classifiers = pkg.__classifiers__
-
-readme = open(os.path.join(wd, 'README.md'),'r').readlines()
+readme = open(os.path.join(os.path.dirname(__file__), 'README.md'),'r').readlines()
 description = readme[6]
 long_description = ''.join(readme)
 
-try:
-    reqs = open(os.path.join(os.path.dirname(__file__), 'requirements.txt')).read()
-except (IOError, OSError):
-    reqs = ''
+tests_require = open(os.path.join(os.path.dirname(__file__), 'test_requirements.txt')).read()
+install_requires = open(os.path.join(os.path.dirname(__file__), 'requirements.txt')).read()
 
 setup(
-    name=name,
-    version=version,
-    author=author,
-    author_email=email,
+    name='Reding',
+    version='2.0',
+    author='Giorgio Salluzzo',
+    author_email='giorgio.salluzzo@gmail.com',
     url='http://buongiornomip.github.com/Reding/',
-    maintainer=author,
-    maintainer_email=email,
+    maintainer='Giorgio Salluzzo',
+    maintainer_email='giorgio.salluzzo@gmail.com',
     description=description,
     long_description=long_description,
-    classifiers=classifiers,
-    install_requires = reqs,
-    packages=find_packages(),
-    license = 'The MIT License (MIT)',
-    keywords ='Rating REST Redis Flask',
+    install_requires=install_requires,
+    extras_require={
+        'tests': tests_require,
+    },
+    test_suite='runtests.runtests',
+    packages=find_packages(exclude=('tests', )),
+    license='The MIT License (MIT)',
+    keywords='Rating REST Redis Flask',
+    classifiers=(
+        'Development Status :: 5 - Production/Stable',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 2.6',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python',
+        'Topic :: Internet :: WWW/HTTP :: WSGI :: Application',
+    ),
 )

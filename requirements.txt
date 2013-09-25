@@ -1,17 +1,5 @@
 CherryPy
 Flask
 Flask-RESTful
-Jinja2
-Werkzeug
-argparse
-cov-core
-coverage
-distribute
-execnet
-pep8
-py
-pycrypto
 redis
 six
-wsgiref
-uwsgi
