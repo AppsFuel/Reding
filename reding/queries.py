@@ -14,7 +14,7 @@ class ZRangeStore(object):
         if not items:
             self._clone(zset, dest)
             return
-        tmp = self.make_key()
+        tmp = self.make_key().next()
         self.client.sadd(tmp, *items)
         self.client.zinterstore(dest, {zset: 1, tmp: 0})
         self.client.delete(tmp)

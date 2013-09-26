@@ -34,7 +34,7 @@ class ObjManager(object):
         }
         zsets = {'updated': (updated_item, amount_item), 'amount': (amount_item, updated_item)}[sort_key]
         if objects_id:
-            newkey = zrangestore.make_key()
+            newkey = zrangestore.make_key().next()
             zrangestore.bysubset(newkey, zsets[0]['key'], *objects_id)
             zsets[0]['key'] = newkey
         return zrangestore.sortnslice(zsets, offset=offset, size=size, reverse=sort_desc)
